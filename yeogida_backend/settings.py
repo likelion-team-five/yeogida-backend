@@ -123,3 +123,9 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "users.CustomUser"
+
+# Kakao login
+
+KAKAO_REST_API_KEY = "a58901d89e4e1e7f4271c04bb23cb1e9"
+
+KAKAO_REDIRECT_URI = "http://127.0.0.1:8000/api/auth/kakao/callback/"
