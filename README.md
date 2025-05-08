@@ -20,8 +20,11 @@ poetry run
 
 을 앞에 붙이고 실행하셔야 합니다.
 
-### commit 전
+### commit 방법
 
 ```
 pre-commit install
+git add .
+git commit -m "커밋할 메세지 내용, 상세하게"
+git push origin main
 ```
