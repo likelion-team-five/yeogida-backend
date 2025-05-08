@@ -16,20 +16,15 @@ repos:
     -   id: autoflake
         args: ['--in-place', '--remove-unused-variables'] # 파일 내에서 바로 수정, 사용되지 않는 변수도 제거
 
-# isort 훅 추가: import 정렬 및 사용되지 않는 import 제거
--   repo: https://github.com/PyCQA/isort
-    rev: 6.0.1 # 최신 버전 확인
-    hooks:
-    -   id: isort
-
 # black 훅
 -   repo: https://github.com/psf/black
     rev: 24.4.2 # 최신 버전 확인
     hooks:
     -   id: black
 
-# flake8 훅
--   repo: https://github.com/pycqa/flake8
-    rev: 7.0.0 # 최신 버전 확인
+
+# isort 훅 추가: import 정렬 및 사용되지 않는 import 제거
+-   repo: https://github.com/PyCQA/isort
+    rev: 6.0.1 # 최신 버전 확인
     hooks:
-    -   id: flake8
+    -   id: isort

@@ -6,19 +6,10 @@
 git clone https://github.com/likelion-team-five/yeogida-backend
 cd yeogida-backend
 poetry install
-poetry run pre-commit install
-poetry run python manage.py runserver
+eval $(poetry env activate)
+pre-commit install
+python manage.py runserver
 ```
-
-### 주의사항
-
-python 명령어를 실행시키기 전에 반드시
-
-```
-poetry run
-```
-
-을 앞에 붙이고 실행하셔야 합니다.
 
 ### commit 방법
 
@@ -28,3 +19,12 @@ git add .
 git commit -m "커밋할 메세지 내용, 상세하게"
 git push origin main
 ```
+
+커밋도중 Failed가 하나라도 발생했다면
+
+```
+git add .
+git commit -m "커밋할 메세지 내용, 상세하게"
+```
+
+다시 실행하셔야 합니다.
