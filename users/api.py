@@ -1,13 +1,22 @@
+from typing import Optional
+
 import requests
 from django.conf import settings
-from django.contrib.auth import authenticate, login
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
-from ninja import Router
+from ninja import Router, Schema
+from ninja_jwt.tokens import RefreshToken
 
 from .models import CustomUser
 
 router = Router(tags=["Kakao Auth"])
+
+
+# 토큰과 사용자 정보를 담을 응답 스키마 정의
+class TokenObtainPairOutput(Schema):
+    access_token: str
+    refresh_token: str
+    user: Optional[dict] = None
 
 
 # 카카오 로그인 시작 엔드포인트
@@ -24,6 +33,7 @@ def kakao_login(request: HttpRequest) -> HttpResponse:
 @router.get("/kakao/callback/")
 def kakao_callback(request: HttpRequest, code: str):
     try:
+        # 카카오 토큰 요청
         token_url = "https://kauth.kakao.com/oauth/token"
         payload = {
             "grant_type": "authorization_code",
@@ -33,70 +43,96 @@ def kakao_callback(request: HttpRequest, code: str):
         }
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         token_response = requests.post(token_url, data=payload, headers=headers)
+        token_response.raise_for_status()
         token_data = token_response.json()
 
         if "error" in token_data:
             print(
                 f"Token Error: {token_data.get('error')}, {token_data.get('error_description')}"
             )
-            return {"error": "Failed to get Kakao token"}
+            return {
+                "error": "Failed to get Kakao token",
+                "details": token_data.get("error_description"),
+            }
 
-        access_token = token_data.get("access_token")
-        # refresh_token = token_data.get("refresh_token")
+        kakao_access_token = token_data.get("access_token")
 
-        # 액세스 토큰으로 사용자 정보 가져오기
+        if not kakao_access_token:
+            print("Error: Kakao access_token not received")
+            return {"error": "Kakao access_token not received"}
+
         user_info_url = "https://kapi.kakao.com/v2/user/me"
-        user_info_headers = {"Authorization": f"Bearer {access_token}"}
+        user_info_headers = {"Authorization": f"Bearer {kakao_access_token}"}
         user_info_response = requests.get(user_info_url, headers=user_info_headers)
+        user_info_response.raise_for_status()  # HTTP 오류 발생 시 예외 발생
         user_info = user_info_response.json()
 
-        print(f"Kakao User Info: {user_info}")  # 디버깅용 출력
+        print(f"Kakao User Info: {user_info}")
 
         kakao_id = user_info.get("id")
-        properties = user_info.get("properties", {})
-
-        nickname = properties.get("nickname")
-        profile_image_url = properties.get("profile_image")
-
         if not kakao_id:
             print("Error: Kakao ID not received")
             return {"error": "Kakao ID not received"}
 
-        try:
-            user = CustomUser.objects.get(id=str(kakao_id))
+        kakao_id_str = str(kakao_id)  # DB 저장을 위해 문자열로 변환
+        properties = user_info.get("properties", {})
+        nickname = properties.get("nickname")
+        profile_image_url = properties.get("profile_image")
 
+        try:
+            user = CustomUser.objects.get(id=kakao_id_str)
             print(f"Existing user found: {user.id}")
-            login(request, user)
-            return {
-                "message": "Kakao login successful",
-                "user": {"id": user.id, "nickname": user.nickname},
-            }
+
+            # 카카오에서 받아온 최신 정보로 사용자 정보 업데이트
+            user.nickname = nickname
+            user.profile_image_url = profile_image_url
+            user.save()
 
         except CustomUser.DoesNotExist:
-            print(f"No existing user, creating new one for Kakao ID: {kakao_id}")
+            print(f"No existing user, creating new one for Kakao ID: {kakao_id_str}")
+            try:
+                user = CustomUser.objects.create_user(
+                    id=kakao_id_str,
+                    nickname=nickname,
+                    profile_image_url=profile_image_url,
+                )
+                print(f"New user created with ID: {user.id}")
+            except Exception as create_error:
+                print(f"Error creating new user: {create_error}")
+                import traceback
 
-            user = CustomUser.objects.create_user(
-                id=str(kakao_id), nickname=nickname, profile_image_url=profile_image_url
-            )
+                traceback.print_exc()
+                return {"error": f"Failed to create user: {str(create_error)}"}
 
-            login(request, user)
-            return {
-                "message": "Kakao signup and login successful",
-                "user": {"id": user.id, "nickname": user.nickname},
-            }
+        # Django-Ninja-JWT를 사용하여 토큰 생성
+        refresh = RefreshToken.for_user(user)
+        app_access_token = str(refresh.access_token)
+        app_refresh_token = str(refresh)
 
+        # 사용자 정보 직렬화 (필요에 따라 내용을 커스터마이징)
+        user_data = {
+            "id": str(user.id),
+            "nickname": user.nickname,
+            "profile_image_url": user.profile_image_url,
+        }
+
+        # TokenObtainPairOutput 스키마를 사용하여 응답 반환
+        return TokenObtainPairOutput(
+            access_token=app_access_token,
+            refresh_token=app_refresh_token,
+            user=user_data,
+        )
+
+    except requests.exceptions.HTTPError as e:
+        print(f"HTTP Error during Kakao API call: {e}")
+        error_details = e.response.json() if e.response else str(e)
+        return {"error": "Error during Kakao API call", "details": error_details}
     except requests.exceptions.RequestException as e:
         print(f"Request Error during Kakao API call: {e}")
-        return {"error": "Error during Kakao API call"}
+        return {"error": "Error during Kakao API call", "details": str(e)}
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
-        return {"error": "An unexpected error occurred"}
+        import traceback
 
-
-# 예시: 로그인 성공 후 리다이렉트할 빈 페이지 (실제 서비스에서는 유효한 URL 사용)
-# TODO: 실제 로그인 성공 후 랜딩 페이지에 대한 Ninja 엔드포인트 필요
-# @router.get("/login/success/")
-# def login_success_page(request: HttpRequest):
-#     if request.user.is_authenticated:
-#         return {"message": f"Welcome, {request.user.nickname}!"}
-#     return {"message": "Login required"}
+        traceback.print_exc()
+        return {"error": "An unexpected error occurred", "details": str(e)}
