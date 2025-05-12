@@ -39,6 +39,9 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "ninja_jwt",
     "users",
+    "reviews",
+    "rankings",
+    "courses",
 ]
 
 MIDDLEWARE = [

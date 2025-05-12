@@ -9,7 +9,11 @@ from ninja_jwt.tokens import RefreshToken
 
 from .models import CustomUser
 
-router = Router(tags=["Kakao Auth"])
+# 인증 관련 엔드포인트를 위한 라우터
+auth_router = Router(tags=["Authentication"])
+
+# 사용자 정보 관련 엔드포인트를 위한 라우터
+user_router = Router(tags=["Users"])
 
 
 # 토큰과 사용자 정보를 담을 응답 스키마 정의
@@ -20,7 +24,7 @@ class TokenObtainPairOutput(Schema):
 
 
 # 카카오 로그인 시작 엔드포인트
-@router.get("/login/kakao/")
+@auth_router.get("/login/kakao/")
 def kakao_login(request: HttpRequest) -> HttpResponse:
     kakao_auth_url = (
         f"https://kauth.kakao.com/oauth/authorize?client_id={settings.KAKAO_REST_API_KEY}"
@@ -30,7 +34,7 @@ def kakao_login(request: HttpRequest) -> HttpResponse:
 
 
 # 카카오 콜백 엔드포인트
-@router.get("/kakao/callback/")
+@auth_router.get("/kakao/callback/")
 def kakao_callback(request: HttpRequest, code: str):
     try:
         # 카카오 토큰 요청
