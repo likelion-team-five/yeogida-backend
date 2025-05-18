@@ -14,7 +14,7 @@ class Carpool(models.Model):
     seats_available = models.PositiveIntegerField()
     author = models.ForeignKey(
         CustomUser, on_delete=models.CASCADE, null=True, blank=True
-    )  # nullable 설정
+    )
     likes = models.PositiveIntegerField(default=0)
 
     created_at = models.DateTimeField(auto_now_add=True)
