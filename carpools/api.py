@@ -9,7 +9,6 @@ from .models import Carpool
 router = Router()
 
 
-# 요청과 응답 스키마 정의
 class CarpoolCommentSchema(Schema):
     id: int
     content: str
@@ -56,13 +55,13 @@ def list_carpools(
     return list(qs)
 
 
-@router.post("/carpools", response=CarpoolSchema)
+@router.post("", response=CarpoolSchema)
 def create_carpool(request, data: CarpoolCreateSchema):
     carpool = Carpool.objects.create(**data.dict())
     return carpool
 
 
-@router.get("/carpools/{carpool_id}", response=CarpoolSchema)
+@router.get("/{carpool_id}", response=CarpoolSchema)
 def get_carpool(request, carpool_id: int):
     carpool = get_object_or_404(
         Carpool.objects.prefetch_related("comments"), id=carpool_id
@@ -70,7 +69,7 @@ def get_carpool(request, carpool_id: int):
     return carpool
 
 
-@router.put("/carpools/{carpool_id}", response=CarpoolSchema)
+@router.patch("/{carpool_id}", response=CarpoolSchema)
 def update_carpool(request, carpool_id: int, data: CarpoolCreateSchema):
     carpool = get_object_or_404(Carpool, id=carpool_id)
     for attr, value in data.dict().items():
@@ -79,14 +78,14 @@ def update_carpool(request, carpool_id: int, data: CarpoolCreateSchema):
     return carpool
 
 
-@router.delete("/carpools/{carpool_id}")
+@router.delete("/{carpool_id}")
 def delete_carpool(request, carpool_id: int):
     carpool = get_object_or_404(Carpool, id=carpool_id)
     carpool.delete()
     return {"success": True}
 
 
-@router.post("/carpools/{carpool_id}/likes")
+@router.post("/{carpool_id}/likes")
 def like_carpool(request, carpool_id: int):
     carpool = get_object_or_404(Carpool, id=carpool_id)
     carpool.likes += 1
@@ -94,7 +93,7 @@ def like_carpool(request, carpool_id: int):
     return {"likes": carpool.likes}
 
 
-@router.delete("/carpools/{carpool_id}/likes")
+@router.delete("/{carpool_id}/likes")
 def unlike_carpool(request, carpool_id: int):
     carpool = get_object_or_404(Carpool, id=carpool_id)
     if carpool.likes > 0:
@@ -103,7 +102,7 @@ def unlike_carpool(request, carpool_id: int):
     return {"likes": carpool.likes}
 
 
-@router.post("/carpools/{carpool_id}/comments")
+@router.post("/{carpool_id}/comments")
 def add_comment(request, carpool_id: int, data: CarpoolCommentSchema):
     carpool = get_object_or_404(Carpool, id=carpool_id)
     carpool.comments.create(content=data.content)
