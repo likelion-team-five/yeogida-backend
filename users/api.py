@@ -1,13 +1,18 @@
-from typing import Optional
+from typing import List, Optional
 
 import requests
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
-from ninja import Router, Schema
+from ninja import Query, Router, Schema
+from ninja_jwt.authentication import JWTAuth
 from ninja_jwt.tokens import RefreshToken
 
+from courses.models import FavoriteCourse
+from courses.schemas import CourseOut
+
 from .models import CustomUser
+from .schemas import TokenObtainPairOutput, UpdateUserIn, UserOut
 
 # 인증 관련 엔드포인트를 위한 라우터
 auth_router = Router(tags=["Authentication"])
@@ -31,6 +36,103 @@ def kakao_login(request: HttpRequest) -> HttpResponse:
         f"&redirect_uri={settings.KAKAO_REDIRECT_URI}&response_type=code"
     )
     return redirect(kakao_auth_url)
+
+
+#  마이페이지 (내 정보 조회)
+@user_router.get("/me", response=UserOut, auth=JWTAuth())
+def me(request: HttpRequest):
+    """
+    로그인한 사용자의 정보를 조회합니다.
+    마이페이지에서 사용자 이름, 닉네임, 이메일, 레벨, 프로필 사진 등을 확인할 때 사용할 수 있습니다.
+    """
+    user: CustomUser = request.user
+    return UserOut(
+        userId=user.id,
+        nickname=user.nickname,
+        name=user.name,
+        email=user.email,
+        level=user.level,
+        profileImage=user.profile_image_url,
+        is_active=user.is_active,
+    )
+
+
+#  마이페이지 (내 정보 수정)
+@user_router.patch("/me", response=UserOut, auth=JWTAuth())
+def update_me(request: HttpRequest, data: UpdateUserIn):
+    """
+    로그인한 사용자의 정보를 수정합니다.
+    닉네임이나 프로필 사진 등을 일부 변경할 수 있습니다.
+    """
+    user: CustomUser = request.user
+    if data.nickname is not None:
+        user.nickname = data.nickname
+    if data.profile_image_url is not None:
+        user.profile_image_url = data.profile_image_url
+    user.save()
+    return UserOut(
+        userId=user.id,
+        nickname=user.nickname,
+        name=user.name,
+        email=user.email,
+        level=user.level,
+        profileImage=user.profile_image_url,
+        is_active=user.is_active,
+    )
+
+
+#  마이페이지 (회원 탈퇴)
+@user_router.delete("/me", auth=JWTAuth())
+def delete_me(request: HttpRequest):
+    """
+    현재 로그인한 사용자의 계정을 삭제합니다.
+    탈퇴 요청 시 사용자 정보를 삭제하며, 복구는 불가능합니다.
+    """
+    user: CustomUser = request.user
+    user.delete()
+    return {"detail": "User account deleted"}
+
+
+#  마이페이지 (찜한 코스 목록 조회)
+@user_router.get("/me/favorites", response=List[CourseOut], auth=JWTAuth())
+def get_favorite_courses(
+    request, limit: Optional[int] = Query(None, description="가져올 최대 찜 코스 수")
+):
+    """
+    로그인한 사용자가 찜한 코스 목록을, 찜한 순서대로 조회합니다.
+    - limit가 주어지면 최대 limit개만 반환합니다.
+    """
+    favs = (
+        FavoriteCourse.objects.filter(user=request.user)
+        .select_related("course")
+        .order_by("-created_at")
+    )
+    if limit:
+        favs = favs[:limit]
+
+    result = []
+    for fav in favs:
+        c = fav.course
+        result.append(
+            CourseOut(
+                id=c.id,
+                name=c.name,
+                description=c.description,
+                duration=c.duration,
+                location=c.location,
+                theme=c.theme,
+                imageUrl=c.image_url,
+                rating=c.rating,
+                estimatedCost={
+                    "currency": c.currency,
+                    "amount": c.amount,
+                },
+                sites=[
+                    SiteSchema(id=s.id, name=s.name, type=s.type) for s in c.sites.all()
+                ],
+            )
+        )
+    return result
 
 
 # 카카오 콜백 엔드포인트

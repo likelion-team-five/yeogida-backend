@@ -4,7 +4,7 @@ from typing import List
 from django.shortcuts import get_object_or_404
 from ninja import Query, Router, Schema
 
-from .models import Carpool
+from .models import Carpool, CarpoolComment
 
 router = Router()
 
@@ -107,3 +107,13 @@ def add_comment(request, carpool_id: int, data: CarpoolCommentSchema):
     carpool = get_object_or_404(Carpool, id=carpool_id)
     carpool.comments.create(content=data.content)
     return {"message": "댓글이 작성되었습니다."}
+
+
+@router.delete("/{carpool_id}/comments/{comment_id}")
+def delete_carpool_comment(request, carpool_id: int, comment_id: int):
+    """
+    지정된 카풀(carpool_id)의 댓글(comment_id)을 삭제합니다.
+    """
+    comment = get_object_or_404(CarpoolComment, id=comment_id, carpool_id=carpool_id)
+    comment.delete()
+    return {"message": "댓글이 삭제되었습니다."}
