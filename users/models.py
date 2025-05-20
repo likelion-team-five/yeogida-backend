@@ -42,6 +42,11 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(unique=True, null=True, blank=True)
     level = models.CharField(max_length=10, default="Lv.1")
 
+    review_count = models.PositiveIntegerField(default=0)
+    like_count = models.PositiveIntegerField(default=0)
+    badge = models.CharField(max_length=20, default="없음")
+    level = models.PositiveIntegerField(default=1)  # 랭킹 페이지 추가
+
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
