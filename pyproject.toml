@@ -6,7 +6,7 @@ authors = [
     {name = "Sihyun Kim",email = "k4sud0n@gmail.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "django (>=5.2,<6.0)",
     "black (>=25.1.0,<26.0.0)",
@@ -24,6 +24,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry.group.dev.dependencies]
 isort = "^6.0.1"
 black = "^25.1.0"
+pre-commit = "^4.2.0"
 
 [tool.isort]
 profile = "black"

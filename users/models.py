@@ -55,3 +55,25 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     def has_module_perms(self, app_label):
         return self.is_superuser
+
+
+# 지역 모델 추가
+class Region(models.Model):
+    code = models.CharField(max_length=10, unique=True)
+    name = models.CharField(max_length=100)
+
+    def __str__(self):
+        return self.name
+
+
+# 방문 기록 모델 추가
+class UserVisitedRegion(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE)
+    region = models.ForeignKey(Region, on_delete=models.CASCADE)
+    visit_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        unique_together = ("user", "region")
+
+    def __str__(self):
+        return f"{self.user.nickname} - {self.region.name} ({self.visit_count} visits)"
