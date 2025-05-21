@@ -11,7 +11,7 @@ from ninja_jwt.tokens import RefreshToken
 from courses.models import FavoriteCourse
 from courses.schemas import CourseOut
 
-from .models import CustomUser
+from .models import CustomUser, Region, UserVisitedRegion
 from .schemas import TokenObtainPairOutput, UpdateUserIn, UserOut
 
 # 인증 관련 엔드포인트를 위한 라우터
@@ -242,3 +242,22 @@ def kakao_callback(request: HttpRequest, code: str):
 
         traceback.print_exc()
         return {"error": "An unexpected error occurred", "details": str(e)}
+
+
+@user_router.get("/me/visited-regions", auth=JWTAuth())
+def get_my_visited_regions(request):
+    """
+    로그인한 사용자의 지역별 방문 횟수를 조회합니다.
+    """
+    visited = UserVisitedRegion.objects.filter(user=request.user).select_related(
+        "region"
+    )
+
+    return [
+        {
+            "region_code": v.region.code,
+            "region_name": v.region.name,
+            "visit_count": v.visit_count,
+        }
+        for v in visited
+    ]
