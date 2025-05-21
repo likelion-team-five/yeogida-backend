@@ -1,14 +1,17 @@
-from ninja import Router, Schema
-from .models import Review
 from datetime import datetime
+
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from ninja import Router, Schema
 from ninja.errors import HttpError
 from ninja.security import django_auth
-from .models import ReviewComment
+
 from users.models import CustomUser
 
+from .models import Review, ReviewComment
+
 router = Router()
+
 
 class ReviewListOut(Schema):
     reviewId: int
@@ -19,6 +22,7 @@ class ReviewListOut(Schema):
     likes: int
     views: int
     createdAt: datetime
+
 
 class ReviewDetailOut(Schema):
     reviewId: int
@@ -31,11 +35,13 @@ class ReviewDetailOut(Schema):
     views: int
     createdAt: datetime
 
+
 class ReviewUpdateIn(Schema):
     title: str | None = None
     content: str | None = None
     region: str | None = None
     place: str | None = None
+
 
 class ReviewCreateIn(Schema):
     title: str
@@ -43,8 +49,10 @@ class ReviewCreateIn(Schema):
     region: str
     place: str
 
+
 class CommentCreateIn(Schema):
     content: str
+
 
 class CommentOut(Schema):
     commentId: int
@@ -52,9 +60,16 @@ class CommentOut(Schema):
     content: str
     createdAt: datetime
 
+
 @router.get("", response=list[ReviewListOut])
-def list_reviews(request, searchType: str = None, keyword: str = None,
-                 sortBy: str = "created_at", order: str = "desc", region: str = None):
+def list_reviews(
+    request,
+    searchType: str = None,
+    keyword: str = None,
+    sortBy: str = "created_at",
+    order: str = "desc",
+    region: str = None,
+):
 
     queryset = Review.objects.all()
 
@@ -76,18 +91,21 @@ def list_reviews(request, searchType: str = None, keyword: str = None,
 
     response = []
     for r in queryset:
-        response.append({
-            "reviewId": r.id,
-            "title": r.title,
-            "author": r.author.username,  # ForeignKey → str
-            "region": r.region,
-            "place": r.place,
-            "likes": r.likes,
-            "views": r.views,
-            "createdAt": r.created_at
-        })
+        response.append(
+            {
+                "reviewId": r.id,
+                "title": r.title,
+                "author": r.author.username,  # ForeignKey → str
+                "region": r.region,
+                "place": r.place,
+                "likes": r.likes,
+                "views": r.views,
+                "createdAt": r.created_at,
+            }
+        )
 
     return response
+
 
 @router.get("/{review_id}", response=ReviewDetailOut)
 def retrieve_review(request, review_id: int):
@@ -108,6 +126,7 @@ def retrieve_review(request, review_id: int):
         "views": review.views,
         "createdAt": review.created_at,
     }
+
 
 @router.patch("/{review_id}", response=ReviewDetailOut)
 def update_review(request, review_id: int, payload: ReviewUpdateIn):
@@ -137,14 +156,15 @@ def update_review(request, review_id: int, payload: ReviewUpdateIn):
         "createdAt": review.created_at,
     }
 
+
 @router.delete("/{review_id}")
 def delete_review(request, review_id: int):
     review = get_object_or_404(Review, id=review_id)
     review.delete()
     return {"message": f"Review {review_id} has been deleted."}
 
-@router.post("", response=ReviewDetailOut, auth=django_auth)
 
+@router.post("", response=ReviewDetailOut, auth=django_auth)
 def create_review(request, payload: ReviewCreateIn):
     user = request.auth  # 로그인된 사용자
 
@@ -171,12 +191,14 @@ def create_review(request, payload: ReviewCreateIn):
         "createdAt": review.created_at,
     }
 
+
 @router.post("/{review_id}/likes")
 def like_review(request, review_id: int):
     review = get_object_or_404(Review, id=review_id)
     review.likes += 1
     review.save()
     return {"message": f"Review {review_id} liked!", "likes": review.likes}
+
 
 @router.delete("/{review_id}/likes")
 def unlike_review(request, review_id: int):
@@ -189,18 +211,17 @@ def unlike_review(request, review_id: int):
         return {"message": f"Review {review_id} unliked", "likes": review.likes}
     else:
         return {"message": "Like count is already 0", "likes": review.likes}
-    
+
+
 @router.post("/{review_id}/comments", response=CommentOut)
 def create_comment(request, review_id: int, payload: CommentCreateIn):
     review = get_object_or_404(Review, id=review_id)
     user = CustomUser.objects.first()  # 테스트용 사용자 지정
-    #user = request.auth  # 실제 로그인된 사용자 기준-> 연동할때 수정
-    #if not user:
-        #raise HttpError(401, "로그인이 필요합니다.")
+    # user = request.auth  # 실제 로그인된 사용자 기준-> 연동할때 수정
+    # if not user:
+    # raise HttpError(401, "로그인이 필요합니다.")
     comment = ReviewComment.objects.create(
-        review=review,
-        author=user,
-        content=payload.content
+        review=review, author=user, content=payload.content
     )
 
     return {
@@ -209,3 +230,28 @@ def create_comment(request, review_id: int, payload: CommentCreateIn):
         "content": comment.content,
         "createdAt": comment.created_at,
     }
+
+
+@router.get("/{review_id}/comments", response=list[CommentOut])
+def list_comments(request, review_id: int):
+    review = get_object_or_404(Review, id=review_id)
+    comments = review.comments.select_related("author").all().order_by("created_at")
+
+    return [
+        {
+            "commentId": comment.id,
+            "author": comment.author.nickname,
+            "content": comment.content,
+            "createdAt": comment.created_at,
+        }
+        for comment in comments
+    ]
+
+
+@router.delete("/{review_id}/comments/{comment_id}")
+def delete_comment(request, review_id: int, comment_id: int):
+    review = get_object_or_404(Review, id=review_id)
+    comment = get_object_or_404(review.comments, id=comment_id)
+
+    comment.delete()
+    return {"message": f"Comment {comment_id} deleted successfully."}

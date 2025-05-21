@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List
 
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from ninja import Query, Router, Schema
 
@@ -117,3 +118,39 @@ def delete_carpool_comment(request, carpool_id: int, comment_id: int):
     comment = get_object_or_404(CarpoolComment, id=comment_id, carpool_id=carpool_id)
     comment.delete()
     return {"message": "댓글이 삭제되었습니다."}
+
+
+@router.get("")
+def list_carpools(request):
+    carpools = Carpool.objects.all().order_by("-created_at")
+    data = [
+        {
+            "id": carpool.id,
+            "title": carpool.title,
+            "description": carpool.description,
+            "departure": carpool.departure,
+            "destination": carpool.destination,
+            "departure_time": carpool.departure_time,
+            "user_id": carpool.user.id,
+        }
+        for carpool in carpools
+    ]
+    return JsonResponse(data, safe=False)
+
+
+@router.get("/{carpool_id}/comments")
+def get_carpool_comments(request, carpool_id: int):
+    carpool = get_object_or_404(Carpool, id=carpool_id)
+    comments = carpool.comments.select_related("author").all()
+
+    comment_list = [
+        {
+            "id": comment.id,
+            "author": comment.author.username,
+            "content": comment.content,
+            "created_at": comment.created_at.isoformat(),
+        }
+        for comment in comments
+    ]
+
+    return JsonResponse(comment_list, safe=False)
