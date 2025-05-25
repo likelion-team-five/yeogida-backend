@@ -135,4 +135,4 @@ AUTH_USER_MODEL = "users.CustomUser"
 
 KAKAO_REST_API_KEY = "a58901d89e4e1e7f4271c04bb23cb1e9"
 
-KAKAO_REDIRECT_URI = "https://meaningful-barbette-moda-backend-69ee5792.koyeb.app/api/v1/auth/kakao/callback/""
+KAKAO_REDIRECT_URI = "https://meaningful-barbette-moda-backend-69ee5792.koyeb.app/api/v1/auth/kakao/callback/"
