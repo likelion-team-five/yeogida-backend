@@ -1,1 +1,1 @@
-web: gunicorn yeogida_backend.wsgi --bind :$PORT --workers 3
+python manage.py migrate && gunicorn yeogida_backend.wsgi --bind :$PORT --workers 3
