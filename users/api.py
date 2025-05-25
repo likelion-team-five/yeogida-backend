@@ -1,3 +1,5 @@
+# users/api.py
+
 from typing import List, Optional
 
 import requests
@@ -9,19 +11,26 @@ from ninja_jwt.authentication import JWTAuth
 from ninja_jwt.tokens import RefreshToken
 
 from courses.models import FavoriteCourse
-from courses.schemas import CourseOut
+
+# Schema for refresh token input
+class RefreshTokenInput(Schema):
+    refresh: str
+
+from courses.schemas import CourseOut, SiteSchema
 
 from .models import CustomUser, Region, UserVisitedRegion
 from .schemas import TokenObtainPairOutput, UpdateUserIn, UserOut
 
+
 # 인증 관련 엔드포인트를 위한 라우터
 auth_router = Router(tags=["Authentication"])
+
 
 # 사용자 정보 관련 엔드포인트를 위한 라우터
 user_router = Router(tags=["Users"])
 
 
-# 토큰과 사용자 정보를 담을 응답 스키마 정의
+# 토큰과 사용자 정보를 담을 응답 스키마 정의 (카카오 로그인 응답용)
 class TokenObtainPairOutput(Schema):
     access_token: str
     refresh_token: str
@@ -29,7 +38,7 @@ class TokenObtainPairOutput(Schema):
 
 
 # 카카오 로그인 시작 엔드포인트
-@auth_router.get("/login/kakao/")
+@auth_router.get("/login/kakao/") # 최종 경로: /api/v1/auth/login/kakao/
 def kakao_login(request: HttpRequest) -> HttpResponse:
     kakao_auth_url = (
         f"https://kauth.kakao.com/oauth/authorize?client_id={settings.KAKAO_REST_API_KEY}"
@@ -38,105 +47,8 @@ def kakao_login(request: HttpRequest) -> HttpResponse:
     return redirect(kakao_auth_url)
 
 
-#  마이페이지 (내 정보 조회)
-@user_router.get("/me", response=UserOut, auth=JWTAuth())
-def me(request: HttpRequest):
-    """
-    로그인한 사용자의 정보를 조회합니다.
-    마이페이지에서 사용자 이름, 닉네임, 이메일, 레벨, 프로필 사진 등을 확인할 때 사용할 수 있습니다.
-    """
-    user: CustomUser = request.user
-    return UserOut(
-        userId=user.id,
-        nickname=user.nickname,
-        name=user.name,
-        email=user.email,
-        level=user.level,
-        profileImage=user.profile_image_url,
-        is_active=user.is_active,
-    )
-
-
-#  마이페이지 (내 정보 수정)
-@user_router.patch("/me", response=UserOut, auth=JWTAuth())
-def update_me(request: HttpRequest, data: UpdateUserIn):
-    """
-    로그인한 사용자의 정보를 수정합니다.
-    닉네임이나 프로필 사진 등을 일부 변경할 수 있습니다.
-    """
-    user: CustomUser = request.user
-    if data.nickname is not None:
-        user.nickname = data.nickname
-    if data.profile_image_url is not None:
-        user.profile_image_url = data.profile_image_url
-    user.save()
-    return UserOut(
-        userId=user.id,
-        nickname=user.nickname,
-        name=user.name,
-        email=user.email,
-        level=user.level,
-        profileImage=user.profile_image_url,
-        is_active=user.is_active,
-    )
-
-
-#  마이페이지 (회원 탈퇴)
-@user_router.delete("/me", auth=JWTAuth())
-def delete_me(request: HttpRequest):
-    """
-    현재 로그인한 사용자의 계정을 삭제합니다.
-    탈퇴 요청 시 사용자 정보를 삭제하며, 복구는 불가능합니다.
-    """
-    user: CustomUser = request.user
-    user.delete()
-    return {"detail": "User account deleted"}
-
-
-#  마이페이지 (찜한 코스 목록 조회)
-@user_router.get("/me/favorites", response=List[CourseOut], auth=JWTAuth())
-def get_favorite_courses(
-    request, limit: Optional[int] = Query(None, description="가져올 최대 찜 코스 수")
-):
-    """
-    로그인한 사용자가 찜한 코스 목록을, 찜한 순서대로 조회합니다.
-    - limit가 주어지면 최대 limit개만 반환합니다.
-    """
-    favs = (
-        FavoriteCourse.objects.filter(user=request.user)
-        .select_related("course")
-        .order_by("-created_at")
-    )
-    if limit:
-        favs = favs[:limit]
-
-    result = []
-    for fav in favs:
-        c = fav.course
-        result.append(
-            CourseOut(
-                id=c.id,
-                name=c.name,
-                description=c.description,
-                duration=c.duration,
-                location=c.location,
-                theme=c.theme,
-                imageUrl=c.image_url,
-                rating=c.rating,
-                estimatedCost={
-                    "currency": c.currency,
-                    "amount": c.amount,
-                },
-                sites=[
-                    SiteSchema(id=s.id, name=s.name, type=s.type) for s in c.sites.all()
-                ],
-            )
-        )
-    return result
-
-
-# 카카오 콜백 엔드포인트
-@auth_router.get("/kakao/callback/")
+# 카카오 콜백 엔드포인트 (기존 로직 유지 - RefreshToken.for_user 사용)
+@auth_router.get("/kakao/callback/") # 최종 경로: /api/v1/auth/kakao/callback/
 def kakao_callback(request: HttpRequest, code: str):
     try:
         # 카카오 토큰 요청
@@ -210,7 +122,7 @@ def kakao_callback(request: HttpRequest, code: str):
                 traceback.print_exc()
                 return {"error": f"Failed to create user: {str(create_error)}"}
 
-        # Django-Ninja-JWT를 사용하여 토큰 생성
+        # Django-Ninja-JWT를 사용하여 토큰 생성 (RefreshToken.for_user(user) 사용)
         refresh = RefreshToken.for_user(user)
         app_access_token = str(refresh.access_token)
         app_refresh_token = str(refresh)
@@ -243,8 +155,122 @@ def kakao_callback(request: HttpRequest, code: str):
         traceback.print_exc()
         return {"error": "An unexpected error occurred", "details": str(e)}
 
+@auth_router.post("/token/refresh", response=TokenObtainPairOutput)
+def refresh_jwt_token(request, payload: RefreshTokenInput):
+    """
+    액세스 토큰 만료 시 리프레시 토큰을 사용하여 새로운 액세스 토큰을 발급합니다.
+    """
+    try:
+        refresh = RefreshToken(payload.refresh)
+        access_token = str(refresh.access_token)
+        return TokenObtainPairOutput(
+            access_token=access_token,
+            refresh_token=str(refresh),
+        )
+    except Exception as e:
+        # Handle invalid token errors (e.g., expired or invalid refresh token)
+        print(f"Token refresh error: {e}")
+        # It's good practice to return a 401 Unauthorized or similar for invalid tokens
+        return {"detail": "Invalid token or token expired"}, 401
 
-@user_router.get("/me/visited-regions", auth=JWTAuth())
+#  마이페이지 (내 정보 조회)
+@user_router.get("/me", response=UserOut, auth=JWTAuth()) # 최종 경로: /api/v1/users/me
+def me(request: HttpRequest):
+    """
+    로그인한 사용자의 정보를 조회합니다.
+    마이페이지에서 사용자 이름, 닉네임, 이메일, 레벨, 프로필 사진 등을 확인할 때 사용할 수 있습니다.
+    """
+    user: CustomUser = request.user
+    return UserOut(
+        userId=user.id,
+        nickname=user.nickname,
+        name=user.name,
+        email=user.email,
+        level=user.level,
+        profileImage=user.profile_image_url,
+        is_active=user.is_active,
+    )
+
+
+#  마이페이지 (내 정보 수정)
+@user_router.patch("/me", response=UserOut, auth=JWTAuth()) # 최종 경로: /api/v1/users/me
+def update_me(request: HttpRequest, data: UpdateUserIn):
+    """
+    로그인한 사용자의 정보를 수정합니다.
+    닉네임이나 프로필 사진 등을 일부 변경할 수 있습니다.
+    """
+    user: CustomUser = request.user
+    if data.nickname is not None:
+        user.nickname = data.nickname
+    if data.profile_image_url is not None:
+        user.profile_image_url = data.profile_image_url
+    user.save()
+    return UserOut(
+        userId=user.id,
+        nickname=user.nickname,
+        name=user.name,
+        email=user.email,
+        level=user.level,
+        profileImage=user.profile_image_url,
+        is_active=user.is_active,
+    )
+
+
+#  마이페이지 (회원 탈퇴)
+@user_router.delete("/me", auth=JWTAuth()) # 최종 경로: /api/v1/users/me
+def delete_me(request: HttpRequest):
+    """
+    현재 로그인한 사용자의 계정을 삭제합니다.
+    탈퇴 요청 시 사용자 정보를 삭제하며, 복구는 불가능합니다.
+    """
+    user: CustomUser = request.user
+    user.delete()
+    return {"detail": "User account deleted"}
+
+
+#  마이페이지 (찜한 코스 목록 조회)
+@user_router.get("/me/favorites", response=List[CourseOut], auth=JWTAuth()) # 최종 경로: /api/v1/users/me/favorites
+def get_favorite_courses(
+    request, limit: Optional[int] = Query(None, description="가져올 최대 찜 코스 수")
+):
+    """
+    로그인한 사용자가 찜한 코스 목록을, 찜한 순서대로 조회합니다.
+    - limit가 주어지면 최대 limit개만 반환합니다.
+    """
+    favs = (
+        FavoriteCourse.objects.filter(user=request.user)
+        .select_related("course")
+        .order_by("-created_at")
+    )
+    if limit:
+        favs = favs[:limit]
+
+    result = []
+    for fav in favs:
+        c = fav.course
+        result.append(
+            CourseOut(
+                id=c.id,
+                name=c.name,
+                description=c.description,
+                duration=c.duration,
+                location=c.location,
+                theme=c.theme,
+                imageUrl=c.image_url,
+                rating=c.rating,
+                estimatedCost={
+                    "currency": c.currency,
+                    "amount": c.amount,
+                },
+                sites=[
+                    SiteSchema(id=s.id, name=s.name, type=s.type) for s in c.sites.all()
+                ],
+            )
+        )
+    return result
+
+
+@user_router.get("/me/visited-regions", auth=JWTAuth()) # 최종 경로: /api/v1/users/me/visited-regions
 def get_my_visited_regions(request):
     """
     로그인한 사용자의 지역별 방문 횟수를 조회합니다.
