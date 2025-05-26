@@ -36,10 +36,16 @@ class TokenObtainPairOutput(Schema):
     refresh_token: str
     user: Optional[dict] = None
 
+# 새롭게 추가: 프론트엔드에서 카카오 인가 코드를 보낼 스키마
+class KakaoCodeInput(Schema):
+    code: str
 
-# 카카오 로그인 시작 엔드포인트
+# 카카오 로그인 시작 엔드포인트 (변경 없음)
 @auth_router.get("/login/kakao/") # 최종 경로: /api/v1/auth/login/kakao/
 def kakao_login(request: HttpRequest) -> HttpResponse:
+    """
+    카카오 로그인 프로세스를 시작하기 위해 카카오 인가 코드 요청 URL로 리다이렉트합니다.
+    """
     kakao_auth_url = (
         f"https://kauth.kakao.com/oauth/authorize?client_id={settings.KAKAO_REST_API_KEY}"
         f"&redirect_uri={settings.KAKAO_REDIRECT_URI}&response_type=code"
@@ -47,16 +53,33 @@ def kakao_login(request: HttpRequest) -> HttpResponse:
     return redirect(kakao_auth_url)
 
 
-# 카카오 콜백 엔드포인트 (기존 로직 유지 - RefreshToken.for_user 사용)
+# 카카오 콜백 엔드포인트 (역할 변경: 인가 코드 수신 및 프론트엔드로 리다이렉트)
 @auth_router.get("/kakao/callback/") # 최종 경로: /api/v1/auth/kakao/callback/
 def kakao_callback(request: HttpRequest, code: str):
+    """
+    카카오로부터 인가 코드를 받아 프론트엔드로 전달합니다.
+    (실제 토큰 발급은 별도의 POST 엔드포인트에서 처리)
+    """
+    redirect_to = f"{settings.FRONTEND_LOGIN_SUCCESS_URI}?code={code}"
+    return redirect(redirect_to)
+
+
+# 새로운 카카오 로그인 처리 엔드포인트 (POST로 변경)
+@auth_router.post("/kakao/login/process", response=TokenObtainPairOutput) # 최종 경로: /api/v1/auth/kakao/login/process
+def kakao_login_process(request: HttpRequest, data: KakaoCodeInput):
+    """
+    프론트엔드로부터 카카오 인가 코드를 받아 카카오 토큰을 발급하고
+    사용자 정보를 기반으로 우리 서비스의 JWT를 생성합니다.
+    """
+    code = data.code # POST 요청 바디에서 code를 가져옵니다.
+
     try:
         # 카카오 토큰 요청
         token_url = "https://kauth.kakao.com/oauth/token"
         payload = {
             "grant_type": "authorization_code",
             "client_id": settings.KAKAO_REST_API_KEY,
-            "redirect_uri": settings.KAKAO_REDIRECT_URI,
+            "redirect_uri": settings.KAKAO_REDIRECT_URI, # 카카오 앱 설정에 등록된 리다이렉트 URI와 동일해야 합니다.
             "code": code,
         }
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -68,10 +91,8 @@ def kakao_callback(request: HttpRequest, code: str):
             print(
                 f"Token Error: {token_data.get('error')}, {token_data.get('error_description')}"
             )
-            return {
-                "error": "Failed to get Kakao token",
-                "details": token_data.get("error_description"),
-            }
+            # 프론트엔드에 오류 응답
+            return {"error": "Failed to get Kakao token", "details": token_data.get("error_description")}
 
         kakao_access_token = token_data.get("access_token")
 
@@ -79,10 +100,11 @@ def kakao_callback(request: HttpRequest, code: str):
             print("Error: Kakao access_token not received")
             return {"error": "Kakao access_token not received"}
 
+        # 카카오 사용자 정보 요청
         user_info_url = "https://kapi.kakao.com/v2/user/me"
         user_info_headers = {"Authorization": f"Bearer {kakao_access_token}"}
         user_info_response = requests.get(user_info_url, headers=user_info_headers)
-        user_info_response.raise_for_status()  # HTTP 오류 발생 시 예외 발생
+        user_info_response.raise_for_status()
         user_info = user_info_response.json()
 
         print(f"Kakao User Info: {user_info}")
@@ -92,7 +114,7 @@ def kakao_callback(request: HttpRequest, code: str):
             print("Error: Kakao ID not received")
             return {"error": "Kakao ID not received"}
 
-        kakao_id_str = str(kakao_id)  # DB 저장을 위해 문자열로 변환
+        kakao_id_str = str(kakao_id)
         properties = user_info.get("properties", {})
         nickname = properties.get("nickname")
         profile_image_url = properties.get("profile_image")
@@ -122,19 +144,18 @@ def kakao_callback(request: HttpRequest, code: str):
                 traceback.print_exc()
                 return {"error": f"Failed to create user: {str(create_error)}"}
 
-        # Django-Ninja-JWT를 사용하여 토큰 생성 (RefreshToken.for_user(user) 사용)
+        # Django-Ninja-JWT를 사용하여 토큰 생성
         refresh = RefreshToken.for_user(user)
         app_access_token = str(refresh.access_token)
         app_refresh_token = str(refresh)
 
-        # 사용자 정보 직렬화 (필요에 따라 내용을 커스터마이징)
+        # 사용자 정보 직렬화
         user_data = {
             "id": str(user.id),
             "nickname": user.nickname,
             "profile_image_url": user.profile_image_url,
         }
 
-        # TokenObtainPairOutput 스키마를 사용하여 응답 반환
         return TokenObtainPairOutput(
             access_token=app_access_token,
             refresh_token=app_refresh_token,
@@ -172,6 +193,8 @@ def refresh_jwt_token(request, payload: RefreshTokenInput):
         print(f"Token refresh error: {e}")
         # It's good practice to return a 401 Unauthorized or similar for invalid tokens
         return {"detail": "Invalid token or token expired"}, 401
+
+# --- (이 아래 사용자 관련 엔드포인트는 변경 없음) ---
 
 #  마이페이지 (내 정보 조회)
 @user_router.get("/me", response=UserOut, auth=JWTAuth()) # 최종 경로: /api/v1/users/me
