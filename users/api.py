@@ -125,10 +125,10 @@ def kakao_login_process(request: HttpRequest, payload: KakaoLoginProcessInput) -
 
     kakao_account = user_info.get("kakao_account", {})
     
-    email = kakao_account.email
+    email = kakao_account.get('email')
     profile_data = kakao_account.get("profile", {})
-    nickname = profile_data.nickname
-    profile_image_url = profile_data.profile_image_url
+    nickname = profile_data.get('nickname')
+    profile_image_url = profile_data.get('profile_image_url')
 
     # --- 사용자 식별 및 생성/업데이트 ---
     try:
