@@ -139,7 +139,7 @@ KAKAO_REST_API_KEY = "a58901d89e4e1e7f4271c04bb23cb1e9"
 
 KAKAO_REDIRECT_URI = "https://meaningful-barbette-moda-backend-69ee5792.koyeb.app/api/v1/auth/kakao/callback/"
 
-FRONTEND_LOGIN_SUCCESS_URI = "http://localhost:3000/auth/kakao/success" 
+FRONTEND_LOGIN_SUCCESS_URI="http://localhost:3000/kakao-redirect"
 
 # CORS
 
