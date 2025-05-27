@@ -5,13 +5,13 @@ from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
 from ninja import Query, Router, Schema
-from ninja.responses import codes_4xx, codes_5xx
+from ninja.responses import codes_4xx, codes_5xx # codes_5xx 추가
 from ninja_jwt.authentication import JWTAuth
 from ninja_jwt.tokens import RefreshToken
 
 
-from .models import CustomUser
-from .schemas import TokenObtainPairOutput, UpdateUserIn, UserOut
+from .models import CustomUser # Region, UserVisitedRegion 등은 필요시 주석 해제
+from .schemas import TokenObtainPairOutput, UpdateUserIn, UserOut # UserOut의 userId 필드 확인 필요
 
 
 class ErrorDetail(Schema):
@@ -32,10 +32,7 @@ class KakaoLoginProcessInput(Schema):
 
 @auth_router.get("/login/kakao/")
 def kakao_login_start(request: HttpRequest) -> HttpResponse:
-    """
-    카카오 로그인 프로세스를 시작합니다.
-    사용자를 카카오 인가 코드 요청 URL로 리다이렉트합니다.
-    """
+    # ... (이전과 동일)
     kakao_auth_url = (
         f"https://kauth.kakao.com/oauth/authorize?response_type=code"
         f"&client_id={settings.KAKAO_REST_API_KEY}"
@@ -46,17 +43,18 @@ def kakao_login_start(request: HttpRequest) -> HttpResponse:
 
 @auth_router.get("/kakao/callback/")
 def kakao_callback(request: HttpRequest, code: str = Query(...)):
-    """
-    카카오 서버로부터 인가 코드를 받아 프론트엔드로 전달합니다.
-    프론트엔드는 이 코드를 사용하여 백엔드의 토큰 발급 API를 호출합니다.
-    """
+    # ... (이전과 동일)
     redirect_url_to_frontend = f"{settings.FRONTEND_LOGIN_SUCCESS_URI}?code={code}"
     return redirect(redirect_url_to_frontend)
 
 
 @auth_router.post(
     "/kakao/login/process",
-    response={200: TokenObtainPairOutput, codes_4xx: ErrorDetail},
+    response={
+        200: TokenObtainPairOutput,
+        codes_4xx: ErrorDetail,
+        codes_5xx: ErrorDetail # 500 에러 스키마 추가
+    },
     summary="카카오 인가 코드로 로그인 처리 및 JWT 발급"
 )
 def kakao_login_process(request: HttpRequest, payload: KakaoLoginProcessInput) -> Union[tuple[int, ErrorDetail], TokenObtainPairOutput]:
@@ -69,81 +67,75 @@ def kakao_login_process(request: HttpRequest, payload: KakaoLoginProcessInput) -
         "redirect_uri": settings.KAKAO_REDIRECT_URI, 
         "code": authorization_code,
     }
-    # Client Secret을 사용하는 경우 (카카오는 필수는 아님)
-    # if getattr(settings, 'KAKAO_CLIENT_SECRET', None):
-    #     request_data["client_secret"] = settings.KAKAO_CLIENT_SECRET
 
     try:
         token_response = requests.post(kakao_token_api_uri, data=request_data, timeout=10)
-        token_response.raise_for_status() # HTTP 에러 발생 시 예외 발생
+        token_response.raise_for_status()
         kakao_tokens = token_response.json()
     except requests.exceptions.Timeout:
         print("DEBUG: 카카오 토큰 발급 요청 시간 초과")
         return 408, ErrorDetail(detail="카카오 서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.")
     except requests.exceptions.RequestException as e:
         error_message = "카카오 토큰 발급 요청 중 오류가 발생했습니다."
-        status_code_to_return = 400 # 기본값
-        if hasattr(e, 'response') and e.response is not None:
-            status_code_to_return = e.response.status_code if e.response.status_code >= 400 else 400
-            try:
-                error_details = e.response.json()
-                error_message = f"카카오 인증 실패: {error_details.get('error', 'Unknown Error')} - {error_details.get('error_description', 'No description')}"
-            except ValueError: # JSON 디코딩 실패 시
-                error_message = f"카카오 인증 실패: 응답을 해석할 수 없습니다. Status: {e.response.status_code}, Body: {e.response.text[:200]}"
-        else:
-            error_message = f"{error_message} 오류: {str(e)}"
-        
         print(f"DEBUG: {error_message}")
-        return status_code_to_return if status_code_to_return < 500 else 400, ErrorDetail(detail=error_message)
+        return 400, ErrorDetail(detail=error_message)
+
 
     kakao_access_token = kakao_tokens.get("access_token")
     if not kakao_access_token:
         return 400, ErrorDetail(detail="카카오로부터 액세스 토큰을 받지 못했습니다.")
 
-    # 카카오 사용자 정보 요청
     kakao_user_info_api_uri = "https://kapi.kakao.com/v2/user/me"
-    headers = {
-        "Authorization": f"Bearer {kakao_access_token}",
-    }
+    headers = {"Authorization": f"Bearer {kakao_access_token}"}
     try:
         user_info_response = requests.get(kakao_user_info_api_uri, headers=headers, timeout=5)
         user_info_response.raise_for_status()
         user_info = user_info_response.json()
     except requests.exceptions.Timeout:
-        print("DEBUG: 카카오 사용자 정보 요청 시간 초과")
+        # ...
         return 408, ErrorDetail(detail="카카오 사용자 정보 조회 중 시간 초과가 발생했습니다.")
     except requests.exceptions.RequestException as e:
-        print(f"DEBUG: 카카오 사용자 정보 요청 실패: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-             print(f"DEBUG: 카카오 사용자 정보 요청 응답 내용: {e.response.text}")
+        # ...
         return 400, ErrorDetail(detail="카카오 사용자 정보를 가져오는데 실패했습니다.")
 
     # --- 카카오 사용자 정보 파싱 ---
-    kakao_id = str(user_info.get("id"))
-    if not kakao_id: # 카카오 ID는 필수
+    user_id_from_kakao = str(user_info.get("id")) # CustomUser의 id 필드 (USERNAME_FIELD)
+    if not user_id_from_kakao:
         return 400, ErrorDetail(detail="카카오 사용자 ID를 확인할 수 없습니다.")
 
     kakao_account = user_info.get("kakao_account", {})
     
-    email = kakao_account.get('email')
+    # 카카오 응답에서 'email' 키가 있는지 확인 후 가져오기
+    email = kakao_account.get('email') if kakao_account.get("has_email") and not kakao_account.get("email_needs_agreement", True) else None
+    
     profile_data = kakao_account.get("profile", {})
-    nickname = profile_data.get('nickname')
-    profile_image_url = profile_data.get('profile_image_url')
+    # 카카오 응답에서 'nickname' 키가 있는지 확인 후 가져오기
+    nickname_from_kakao = profile_data.get('nickname') if not kakao_account.get("profile_needs_agreement", True) else None
+    
+    # 카카오 응답에서 'profile_image_url' 키가 있는지 확인 후 가져오기
+    profile_image_url_from_kakao = profile_data.get('profile_image_url') if not kakao_account.get("profile_needs_agreement", True) else None
+
+    # CustomUserManager.create_user는 nickname을 필수로 요구함
+    if not nickname_from_kakao:
+        pass
+
 
     # --- 사용자 식별 및 생성/업데이트 ---
     try:
-        user = CustomUser.objects.get(id=kakao_id)
+        user = CustomUser.objects.get(id=user_id_from_kakao) # USERNAME_FIELD인 id로 조회
+        
+        # 기존 사용자 정보 업데이트
         fields_to_update = []
-        if email and user.email != email:
+        if email is not None and user.email != email: # email 필드가 있고, 카카오 이메일과 다를 경우
             user.email = email
             fields_to_update.append('email')
         
-        if nickname and user.nickname != nickname:
-            user.nickname = nickname
+        if nickname_from_kakao and user.nickname != nickname_from_kakao: # nickname 필드가 있고, 카카오 닉네임과 다를 경우
+            user.nickname = nickname_from_kakao
             fields_to_update.append('nickname')
         
-        if profile_image_url and user.profile_image_url != profile_image_url:
-            user.profile_image_url = profile_image_url
+        if profile_image_url_from_kakao and user.profile_image_url != profile_image_url_from_kakao:
+            user.profile_image_url = profile_image_url_from_kakao
             fields_to_update.append('profile_image_url')
         
         if not user.is_active:
@@ -153,29 +145,33 @@ def kakao_login_process(request: HttpRequest, payload: KakaoLoginProcessInput) -
         if fields_to_update:
             user.save(update_fields=fields_to_update)
 
-    except CustomUser.DoesNotExist:            
-        # 이메일 중복 체크 (카카오에서 이메일을 받았고, 해당 이메일로 이미 가입된 사용자가 있는지)
+    except CustomUser.DoesNotExist:
         if email and CustomUser.objects.filter(email=email).exists():
-            return 400, ErrorDetail(detail=f"이미 해당 이메일({email})로 가입된 계정이 존재합니다. 다른 방법으로 로그인해주세요.")
+            return 400, ErrorDetail(detail=f"이미 해당 이메일({email})로 가입된 계정이 존재합니다.")
+
+        # UserManager의 create_user는 nickname을 필수로 요구
+        if not nickname_from_kakao:
+            return 400, ErrorDetail(detail="카카오 프로필에서 닉네임 정보를 가져올 수 없습니다. (닉네임 필수)")
+
 
         try:
-            # CustomUser 모델의 create_user 메소드가 아래 인자들을 처리할 수 있도록 구현되어야 함
             user = CustomUser.objects.create_user(
-                email=email, # 모델에서 null=True 허용 필요
-                nickname=nickname, # 모델에서 null=True 허용 필요
-                profile_image_url=profile_image_url, # 모델에서 null=True 허용 필요
-                id=kakao_id,
+                id=user_id_from_kakao,          # USERNAME_FIELD 값
+                nickname=nickname_from_kakao,   # 필수 인자
+                password=None,                  # 소셜 로그인이므로 비밀번호 없음
+                email=email,                    # extra_fields로 전달
+                profile_image_url=profile_image_url_from_kakao, # extra_fields로 전달
             )
-            # user.set_unusable_password() # create_user 내에서 처리될 수도 있음
-            # user.save() # create_user 내에서 save가 호출됨
-        except Exception as e: # IntegrityError 등 다양한 예외 처리
+        except ValueError as ve: # UserManager에서 발생시킨 ValueError (예: nickname 누락)
+             print(f"사용자 생성 중 ValueError: {ve}")
+             return 400, ErrorDetail(detail=str(ve)) # UserManager의 에러 메시지 그대로 전달
+        except Exception as e:
             print(f"사용자 생성 오류: {type(e).__name__} - {e}")
             return 500, ErrorDetail(detail=f"사용자 계정 생성 중 오류가 발생했습니다.")
 
-    if not user.is_active: # 혹시 모를 비활성 상태 체크
+    if not user.is_active:
         return 403, ErrorDetail(detail="사용자 계정이 비활성화 상태입니다.")
 
-    # JWT 토큰 발급
     refresh = RefreshToken.for_user(user)
     return TokenObtainPairOutput(
         refresh=str(refresh),
@@ -184,49 +180,51 @@ def kakao_login_process(request: HttpRequest, payload: KakaoLoginProcessInput) -
 
 
 # --- 사용자 정보 관련 엔드포인트 ---
-
-@user_router.get("/me", response={200: UserOut, codes_4xx: ErrorDetail}, auth=JWTAuth())
+@user_router.get("/me", response={200: UserOut, codes_4xx: ErrorDetail, codes_5xx: ErrorDetail}, auth=JWTAuth())
 def me(request: HttpRequest):
     user: CustomUser = request.user
-    # UserOut 스키마에 정의된 필드에 맞춰서 반환
+    # UserOut 스키마의 userId가 CustomUser의 어떤 필드를 참조하는지 확인 필요 (현재 id를 USERNAME_FIELD로 사용)
     return UserOut(
-        userId=user.username, # 또는 user.id, UserOut 스키마 정의에 따름
-        nickname=user.nickname,
-        name=getattr(user, 'name', None), # CustomUser 모델에 name 필드가 있다면
-        email=user.email,
-        level=getattr(user, 'level', None), # CustomUser 모델에 level 필드가 있다면
-        profileImage=user.profile_image_url,
-        is_active=user.is_active,
-    )
-
-
-@user_router.patch("/me", response={200: UserOut, codes_4xx: ErrorDetail}, auth=JWTAuth())
-def update_me(request: HttpRequest, data: UpdateUserIn):
-    user: CustomUser = request.user
-    update_data = data.model_dump(exclude_unset=True) # Pydantic v2 방식
-    
-    # 닉네임 중복 검사 등 유효성 검사 추가 가능
-    # if 'nickname' in update_data and CustomUser.objects.filter(nickname=update_data['nickname']).exclude(pk=user.pk).exists():
-    #     return 400, ErrorDetail(detail="이미 사용 중인 닉네임입니다.")
-
-    for key, value in update_data.items():
-        setattr(user, key, value)
-    
-    try:
-        user.save()
-    except Exception as e: # 저장 중 발생할 수 있는 오류 (e.g., DB 제약조건 위반)
-        print(f"사용자 정보 업데이트 오류: {e}")
-        return 400, ErrorDetail(detail="사용자 정보 업데이트 중 오류가 발생했습니다.")
-        
-    return UserOut(
-        userId=user.username,
+        userId=user.id, # USERNAME_FIELD인 id를 사용
         nickname=user.nickname,
         name=getattr(user, 'name', None),
         email=user.email,
-        level=getattr(user, 'level', None),
+        level=str(getattr(user, 'level', "1")), # level 필드가 숫자면 str로 변환, 문자열이면 그대로
         profileImage=user.profile_image_url,
         is_active=user.is_active,
     )
+
+@user_router.patch("/me", response={200: UserOut, codes_4xx: ErrorDetail, codes_5xx: ErrorDetail}, auth=JWTAuth())
+def update_me(request: HttpRequest, data: UpdateUserIn):
+    # ... (이전과 동일, UserOut 스키마 userId 필드 확인)
+    user: CustomUser = request.user
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(user, key, value)
+    try:
+        user.save()
+    except Exception as e:
+        print(f"사용자 정보 업데이트 오류: {e}")
+        return 400, ErrorDetail(detail="사용자 정보 업데이트 중 오류가 발생했습니다.")
+    return UserOut(
+        userId=user.id,
+        nickname=user.nickname,
+        name=getattr(user, 'name', None),
+        email=user.email,
+        level=str(getattr(user, 'level', "1")),
+        profileImage=user.profile_image_url,
+        is_active=user.is_active,
+    )
+
+@user_router.delete("/me", response={200: Dict[str, str], codes_4xx: ErrorDetail, codes_5xx: ErrorDetail}, auth=JWTAuth())
+def delete_me(request: HttpRequest):
+    user: CustomUser = request.user
+    try:
+        user.delete()
+    except Exception as e:
+        print(f"사용자 계정 삭제 오류: {e}")
+        return 500, ErrorDetail(detail="사용자 계정 삭제 중 오류가 발생했습니다.")
+    return {"detail": "User account successfully deleted."}
 
 
 @user_router.delete("/me", response={200: Dict[str, str], codes_4xx: ErrorDetail}, auth=JWTAuth())
