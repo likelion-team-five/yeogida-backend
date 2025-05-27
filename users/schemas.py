@@ -19,6 +19,5 @@ class UpdateUserIn(Schema):
 
 
 class TokenObtainPairOutput(Schema):
-    access_token: str
-    refresh_token: str
-    user: Optional[dict] = None
+    access: str
+    refresh: str
