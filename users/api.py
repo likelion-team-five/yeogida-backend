@@ -111,8 +111,6 @@ def kakao_login_process(request: HttpRequest, payload: KakaoLoginProcessInput) -
         user_info = user_info_response.json()
     except requests.exceptions.Timeout:
         print("DEBUG: 카카오 사용자 정보 요청 시간 초과")
-        # 이미 발급받은 카카오 토큰을 만료시키는 것이 좋을 수 있습니다. (선택 사항)
-        # requests.post("https://kapi.kakao.com/v1/user/unlink", headers={"Authorization": f"Bearer {kakao_access_token}"})
         return 408, ErrorDetail(detail="카카오 사용자 정보 조회 중 시간 초과가 발생했습니다.")
     except requests.exceptions.RequestException as e:
         print(f"DEBUG: 카카오 사용자 정보 요청 실패: {e}")
@@ -127,33 +125,19 @@ def kakao_login_process(request: HttpRequest, payload: KakaoLoginProcessInput) -
 
     kakao_account = user_info.get("kakao_account", {})
     
-    email = None
-    # 사용자가 이메일 제공에 동의했고, 카카오 계정에 이메일이 실제로 있는 경우
-    if kakao_account.get("has_email") and not kakao_account.get("email_needs_agreement", True): # email_needs_agreement가 False여야 동의한 것
-        email = kakao_account.get("email")
-
+    email = kakao_account.email
     profile_data = kakao_account.get("profile", {})
-    nickname = None
-    profile_image_url = None
-    # 사용자가 프로필 정보 제공에 동의한 경우
-    if not kakao_account.get("profile_needs_agreement", True): # profile_needs_agreement가 False여야 동의한 것
-        nickname = profile_data.get("nickname")
-        profile_image_url = profile_data.get("profile_image_url") # 썸네일 대신 일반 프로필 이미지
+    nickname = profile_data.nickname
+    profile_image_url = profile_data.profile_image_url
 
     # --- 사용자 식별 및 생성/업데이트 ---
     try:
         user = CustomUser.objects.get(id=kakao_id)
-        # 기존 사용자 정보 업데이트
         fields_to_update = []
         if email and user.email != email:
-            # 이메일 변경 시, 해당 이메일이 다른 계정에서 사용 중인지 확인하는 로직 추가 가능
-            # if CustomUser.objects.filter(email=email).exclude(pk=user.pk).exists():
-            #     return 400, ErrorDetail(detail="해당 이메일은 이미 다른 계정에서 사용 중입니다.")
             user.email = email
             fields_to_update.append('email')
         
-        # 닉네임은 카카오 닉네임으로 덮어쓸지, 기존 닉네임 유지할지 정책 필요
-        # 여기서는 카카오 닉네임으로 업데이트 (값이 있는 경우)
         if nickname and user.nickname != nickname:
             user.nickname = nickname
             fields_to_update.append('nickname')
@@ -171,15 +155,7 @@ def kakao_login_process(request: HttpRequest, payload: KakaoLoginProcessInput) -
 
     except CustomUser.DoesNotExist:
         # 새 사용자 생성
-        generated_username = f"kakao_{kakao_id}" # 고유 username 생성 (정책에 따라 변경 가능)
-        
-        # username 중복 시 처리 (간단한 예시, 실제로는 더 견고하게)
-        # _username = generated_username
-        # count = 1
-        # while CustomUser.objects.filter(username=_username).exists():
-        #     _username = f"{generated_username}_{count}"
-        #     count += 1
-        # generated_username = _username
+        generated_username = f"kakao_{kakao_id}"
             
         # 이메일 중복 체크 (카카오에서 이메일을 받았고, 해당 이메일로 이미 가입된 사용자가 있는지)
         if email and CustomUser.objects.filter(email=email).exists():
