@@ -5,7 +5,7 @@ from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
 from ninja import Query, Router, Schema
-from ninja.responses import codes_4xx
+from ninja.responses import codes_4xx, codes_5xx
 from ninja_jwt.authentication import JWTAuth
 from ninja_jwt.tokens import RefreshToken
 
@@ -153,10 +153,7 @@ def kakao_login_process(request: HttpRequest, payload: KakaoLoginProcessInput) -
         if fields_to_update:
             user.save(update_fields=fields_to_update)
 
-    except CustomUser.DoesNotExist:
-        # 새 사용자 생성
-        generated_username = f"kakao_{kakao_id}"
-            
+    except CustomUser.DoesNotExist:            
         # 이메일 중복 체크 (카카오에서 이메일을 받았고, 해당 이메일로 이미 가입된 사용자가 있는지)
         if email and CustomUser.objects.filter(email=email).exists():
             return 400, ErrorDetail(detail=f"이미 해당 이메일({email})로 가입된 계정이 존재합니다. 다른 방법으로 로그인해주세요.")
@@ -164,7 +161,6 @@ def kakao_login_process(request: HttpRequest, payload: KakaoLoginProcessInput) -
         try:
             # CustomUser 모델의 create_user 메소드가 아래 인자들을 처리할 수 있도록 구현되어야 함
             user = CustomUser.objects.create_user(
-                username=generated_username,
                 email=email, # 모델에서 null=True 허용 필요
                 nickname=nickname, # 모델에서 null=True 허용 필요
                 profile_image_url=profile_image_url, # 모델에서 null=True 허용 필요
