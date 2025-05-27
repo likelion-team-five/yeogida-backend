@@ -142,7 +142,7 @@ def kakao_login_process(request: HttpRequest, payload: KakaoLoginProcessInput) -
 
     # --- 사용자 식별 및 생성/업데이트 ---
     try:
-        user = CustomUser.objects.get(kakao_id=kakao_id)
+        user = CustomUser.objects.get(id=kakao_id)
         # 기존 사용자 정보 업데이트
         fields_to_update = []
         if email and user.email != email:
@@ -192,9 +192,7 @@ def kakao_login_process(request: HttpRequest, payload: KakaoLoginProcessInput) -
                 email=email, # 모델에서 null=True 허용 필요
                 nickname=nickname, # 모델에서 null=True 허용 필요
                 profile_image_url=profile_image_url, # 모델에서 null=True 허용 필요
-                kakao_id=kakao_id,
-                # name 필드가 있다면, name=nickname 또는 다른 값으로 설정
-                # password는 소셜 로그인 시 보통 None 또는 사용 불가능한 값으로 설정됨
+                id=kakao_id,
             )
             # user.set_unusable_password() # create_user 내에서 처리될 수도 있음
             # user.save() # create_user 내에서 save가 호출됨
