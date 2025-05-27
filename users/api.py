@@ -76,9 +76,25 @@ def kakao_login_process(request: HttpRequest, payload: KakaoLoginProcessInput) -
         print("DEBUG: 카카오 토큰 발급 요청 시간 초과")
         return 408, ErrorDetail(detail="카카오 서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.")
     except requests.exceptions.RequestException as e:
-        error_message = "카카오 토큰 발급 요청 중 오류가 발생했습니다."
-        print(f"DEBUG: {error_message}")
-        return 400, ErrorDetail(detail=error_message)
+        error_message_detail = "카카오 토큰 발급 요청 중 오류가 발생했습니다."
+        status_code_to_return = 400
+        if hasattr(e, 'response') and e.response is not None:
+            status_code_to_return = e.response.status_code if e.response.status_code >= 400 else 400
+            try:
+                error_details_json = e.response.json()
+                kakao_error_code = error_details_json.get('error', 'Unknown Error Code')
+                kakao_error_desc = error_details_json.get('error_description', 'No description')
+                error_message_detail = f"카카오 인증 실패: {kakao_error_code} - {kakao_error_desc}"
+                print(f"DEBUG: 카카오 API 에러 응답 JSON: {error_details_json}")
+            except ValueError:
+                error_response_text = e.response.text[:500]
+                error_message_detail = f"카카오 인증 실패: 응답을 JSON으로 해석 불가. Status: {e.response.status_code}, Body: {error_response_text}"
+                print(f"DEBUG: 카카오 API 에러 응답 TEXT: {error_response_text}")
+        else:
+            error_message_detail = f"{error_message_detail} 오류: {str(e)}"
+        
+        print(f"DEBUG 최종 에러 메시지 (클라이언트 전달용): {error_message_detail}")
+        return status_code_to_return if status_code_to_return < 500 else 400, ErrorDetail(detail=error_message_detail)
 
 
     kakao_access_token = kakao_tokens.get("access_token")
