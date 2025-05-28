@@ -4,7 +4,7 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from ninja import Router, Schema
 from ninja.errors import HttpError
-from ninja.security import django_auth
+from ninja_jwt.authentication import JWTAuth
 
 from users.models import CustomUser
 
@@ -164,7 +164,7 @@ def delete_review(request, review_id: int):
     return {"message": f"Review {review_id} has been deleted."}
 
 
-@router.post("", response=ReviewDetailOut, auth=django_auth)
+@router.post("", response=ReviewDetailOut, auth=JWTAuth())
 def create_review(request, payload: ReviewCreateIn):
     user = request.auth  # 로그인된 사용자
 
