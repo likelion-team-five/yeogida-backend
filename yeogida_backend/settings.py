@@ -146,3 +146,7 @@ FRONTEND_LOGIN_SUCCESS_URI="http://localhost:3000/kakao-redirect"
 CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:3000',
+]
